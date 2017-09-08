@@ -1,0 +1,4 @@
+<?xml version='1.0'?>
+<launch>
+    <node launch-prefix="xterm -e gdb --args" pkg="pcl_segmentation" type="stream_ground_segmentation" name="ground_segmentation"/>
+</launch>
