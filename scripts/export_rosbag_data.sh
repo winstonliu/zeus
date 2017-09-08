@@ -5,8 +5,7 @@
 # All rights reserved
 
 # Arguments
-SEC_PER_FRAME=1 # Number of seconds per frame extraction. Do not exceed camera fps.
-
+FPS=15 # Default FPS of video
 
 ### SETUP ###
 
@@ -50,11 +49,8 @@ filename=$(basename ${1%.*})
 
 echo "... Output folder will be created in $PWD"
 
-folder_name="extract_${filename}_${2}_${3}_fr${SEC_PER_FRAME}"
-if [ -d "$folder_name" ]; then
-    echo "ERROR: Previous extracted folder exists. Please move or delete folder before continuing."
-    exit
-else
+folder_name="extract_${filename}"
+if ! [ -d "$folder_name" ]; then
     mkdir "$folder_name"
 fi
 
@@ -78,7 +74,7 @@ rosrun image_transport republish compressed in:=$4 out:=camera_out/image & PID_R
 
 cd "$folder_name"
 
-rosrun image_view extract_images _filename_format:="frame%04i.jpg" _sec_per_frame:=$SEC_PER_FRAME image:=camera_out/image & PID_EXTRACT=$!
+rosrun image_view video_recorder _fps:=$FPS _filename:="${filename}_start_${2}_dur_${timediff}.avi" image:=camera_out/image & PID_EXTRACT=$!
 
 # Wait for rosbag to finish playing
 trap "kill $PID_BAG 2> /dev/null" EXIT
