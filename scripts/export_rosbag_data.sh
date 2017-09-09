@@ -6,6 +6,9 @@
 
 # Arguments
 FPS=15 # Default FPS of video
+SEC_PER_FRAME=1 # Seconds per frame
+
+OUTPUT_VIDEO_INSTEAD_OF_IMAGES=false
 
 ### SETUP ###
 
@@ -18,7 +21,9 @@ fi
 
 ERROR_MSG="
 Run script using command:
-    'export_rosbag_data.sh [ROSBAG_FILE_NAME] [EXPORT_START_TIME_IN_SECS] [EXPORT_ENDING_TIME_IN_SECS] [IMAGE_TOPIC]'
+    'export_rosbag_data.sh [ROSBAG_FILE_NAME] [EXPORT_START_TIME_IN_SECS] [EXPORT_ENDING_TIME_IN_SECS] [CAMERA_TOPIC_NAME]'
+
+EX. './export_rosbag_data.sh car_test2 362 388 ProcessedStereoToRos'
 You can get the desired starting and ending times by viewing the rosbag in rqt."
 
 if [[ "$#" -ne 4 ]]; then 
@@ -58,8 +63,17 @@ fi
 ### MAIN PROGRAM ###
 
 
+# Some variables
+bagstart_sec=$(temp=$(rosbag info -y -k start $1); echo ${temp%.*})
+bagtime_filter_start=$(( $2 + $bagstart_sec ))
+bagtime_filter_end=$(( $3 + $bagstart_sec ))
+new_bag_name="filtered_${filename}_${2}_${3}.bag"
 
-timediff=$(( $3 - $2 )) # Duration of segment to extract
+# Cut out the piece of the rosbag that we're interested in. This command is blocking
+echo "Copying bag from ${bagtime_filter_start} to ${bagtime_filter_end}."
+rosbag filter $1 $folder_name/$new_bag_name "t.to_sec() >= $bagtime_filter_start and t.to_sec() <= $bagtime_filter_end"
+
+cd "$folder_name"
 
 # Start roscore
 roscore & PID_ROS=$!
@@ -67,14 +81,20 @@ sleep 2 # Pause for a bit since there's usually a delay for roscore starting up
 
 # Start rosbag playing
 echo $1
-rosbag play --clock --start=$2 --duration=$timediff $1 & PID_BAG=$!
+rosbag play --clock $new_bag_name & PID_BAG=$!
 
 # Need do decompress images before exporting
-rosrun image_transport republish compressed in:=$4 out:=camera_out/image & PID_REPUBLISH=$!
+rosrun image_transport republish compressed in:=${4}/left/image_rect out:=camera_out/image & PID_REPUBLISH=$!
 
-cd "$folder_name"
+# Run either the video recording or the image extraction based on the setting of the flag
+if $OUTPUT_VIDEO_INSTEAD_OF_IMAGES; then
+    rosrun image_view video_recorder _fps:=$FPS _filename:="${filename}_start_${2}_dur_${timediff}.avi" image:=camera_out/image & PID_EXTRACT=$!
+else
+    rosrun image_view extract_images _filename_format:="${filename}_fr%04i.jpg" _sec_per_frame:=$SEC_PER_FRAME image:=camera_out/image & PID_EXTRACT=$!
+fi 
 
-rosrun image_view video_recorder _fps:=$FPS _filename:="${filename}_start_${2}_dur_${timediff}.avi" image:=camera_out/image & PID_EXTRACT=$!
+# Output camera info
+rostopic echo -n 1 ${4}/left/camera_info > camera_info.txt
 
 # Wait for rosbag to finish playing
 trap "kill $PID_BAG 2> /dev/null" EXIT
